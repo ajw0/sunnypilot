@@ -1,23 +1,39 @@
-import os
+#!/usr/bin/env python3
 import subprocess
 import time
 import unittest
-
+import os
 from multiprocessing import Queue
 
 from cereal import messaging
 from openpilot.common.basedir import BASEDIR
+from openpilot.selfdrive.manager.helpers import unblock_stdout
+from openpilot.tools.sim import bridge
+from openpilot.tools.sim.bridge import CarlaBridge
+
+CI = "CI" in os.environ
 
 SIM_DIR = os.path.join(BASEDIR, "tools/sim")
 
-class TestSimBridgeBase(unittest.TestCase):
-  @classmethod
-  def setUpClass(cls):
-    if cls is TestSimBridgeBase:
-      raise unittest.SkipTest("Don't run this base class, run test_carla_bridge.py instead")
+class TestCarlaIntegration(unittest.TestCase):
+  """
+  Tests need Carla simulator to run
+  """
+  processes = None
+  carla_process = None
 
   def setUp(self):
     self.processes = []
+
+    if not CI:
+      # We want to make sure that carla_sim docker isn't still running.
+      subprocess.run("docker rm -f carla_sim", shell=True, stderr=subprocess.PIPE, check=False)
+      self.carla_process = subprocess.Popen("./start_carla.sh", cwd=SIM_DIR)
+
+    # Too many lagging messages in bridge.py can cause a crash. This prevents it.
+    unblock_stdout()
+    # Wait 10 seconds to startup carla
+    time.sleep(10)
 
   def test_engage(self):
     # Startup manager and bridge.py. Check processes are running, then engage and verify.
@@ -26,7 +42,7 @@ class TestSimBridgeBase(unittest.TestCase):
 
     sm = messaging.SubMaster(['controlsState', 'carEvents', 'managerState'])
     q = Queue()
-    carla_bridge = self.create_bridge()
+    carla_bridge = CarlaBridge(bridge.parse_args([]))
     p_bridge = carla_bridge.run(q, retries=10)
     self.processes.append(p_bridge)
 
@@ -82,6 +98,11 @@ class TestSimBridgeBase(unittest.TestCase):
         p.wait(15)
       else:
         p.join(15)
+
+    # Stop carla simulator by removing docker container
+    subprocess.run("docker rm -f carla_sim", shell=True, stderr=subprocess.PIPE, check=False)
+    if self.carla_process is not None:
+      self.carla_process.wait()
 
 
 if __name__ == "__main__":
