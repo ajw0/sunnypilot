@@ -842,7 +842,7 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
   },
 
   EventName.noGps: {
-    ET.PERMANENT: no_gps_alert,
+    # ET.PERMANENT: no_gps_alert,
   },
 
   EventName.soundsUnavailable: {
